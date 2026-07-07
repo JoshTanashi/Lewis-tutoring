@@ -10,6 +10,7 @@ import {
   startCheckout,
 } from "@/app/actions/onboarding";
 import { Logo } from "@/components/brand/logo";
+import { submitPayfast } from "@/components/portal/payfast-submit";
 import {
   BlobPal,
   CloudPal,
@@ -160,20 +161,8 @@ export function OnboardingWizard({
       if (step === 5) {
         const res = await startCheckout({ package_slug: pkg, student_id: studentId! });
         if (!res.ok) throw new Error(res.error);
-        // Build & submit the PayFast form
-        const form = document.createElement("form");
-        form.method = "POST";
-        form.action = res.checkout.processUrl;
-        for (const [k, v] of res.checkout.fields) {
-          const inp = document.createElement("input");
-          inp.type = "hidden";
-          inp.name = k;
-          inp.value = v;
-          form.appendChild(inp);
-        }
-        document.body.appendChild(form);
-        form.submit();
-        return; // navigating away
+        submitPayfast(res.checkout); // navigating away
+        return;
       }
       setStep((s) => s + 1);
     } catch (err) {
