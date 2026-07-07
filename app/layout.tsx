@@ -22,6 +22,13 @@ export const metadata: Metadata = {
   description:
     "Building confident learners, one lesson at a time. Personalised tutoring for kids of all ages — grade 1 prep, homework support, exam preparation, online & in-person.",
   icons: { icon: "/favicon.svg" },
+  openGraph: {
+    title: "Lewis Tutoring — Building confident learners",
+    description:
+      "Personalised tutoring for kids of all ages — grade 1 prep, homework support, exam preparation. Online & in person.",
+    images: ["/og.png"],
+    type: "website",
+  },
 };
 
 export default function RootLayout({

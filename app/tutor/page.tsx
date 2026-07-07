@@ -40,9 +40,9 @@ export default async function TutorDashboard() {
     supabase.from("motivational_messages").select("body, author"),
   ]);
 
-  const note = motivation?.length
-    ? motivation[Math.floor(Math.random() * motivation.length)]
-    : null;
+  // a different love note each day, rotating through the collection
+  const dayIndex = Math.floor(dayStart.getTime() / 86_400_000);
+  const note = motivation?.length ? motivation[dayIndex % motivation.length] : null;
 
   return (
     <>

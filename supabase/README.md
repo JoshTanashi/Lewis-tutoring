@@ -38,3 +38,23 @@ Live PayFast credentials go in edge function secrets (`PAYFAST_MODE=live`,
 - `super_admin` (Michaela + Joshua, assigned by email at signup) sees everything, incl. audit logs and settings.
 - Roles can only be changed by a super admin (enforced by trigger), never self-assigned.
 - Payments table is written exclusively by the service role in the ITN webhook.
+
+## Demo data
+
+The project is pre-seeded with a demo family (see the root README for logins):
+Zoë Demo (Grade 4) with 6 completed lessons, homework in every state, rising
+test marks, badges, a 5-week streak, paid + pending invoices with matching
+PayFast payment records, parent↔tutor chat history and a full journey timeline.
+Delete the three `*@lewistutoring.co.za` demo users from Supabase Auth to wipe it
+(cascades clean up the rest).
+
+## Advisor notes (intentional)
+
+The security linter WARNs that `app_role`, `is_staff`, `my_student_ids`,
+`join_waitlist`, `get_open_slots` and `create_invoice_for_package` are callable
+via RPC. This is deliberate: the first three only report the *caller's own*
+session (null/false/empty for anon) and must stay executable for RLS policies to
+evaluate; the last three are the public waitlist form and the parents' booking /
+checkout API, each validating its own inputs. Trigger functions have all
+EXECUTE grants revoked. Consider enabling "leaked password protection" in
+Auth → Settings (dashboard-only toggle).

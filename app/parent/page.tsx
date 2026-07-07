@@ -21,7 +21,15 @@ export default async function ParentDashboard() {
   // Brand-new parents go straight to onboarding
   if (!kids?.length && profile.role === "parent") redirect("/onboarding");
 
-  const kidIds = (kids ?? []).map((k) => k.student_id);
+  const kidIds = (kids ?? []).map((k) => k.student_id).filter(Boolean) as string[];
+  if (!kidIds.length) {
+    return (
+      <>
+        <PageTitle title={`Hi ${profile.full_name.split(" ")[0] || "there"}! 👋`} />
+        <EmptyState title="No students yet" hint="Families appear here as they sign up." />
+      </>
+    );
+  }
 
   const [{ data: lessons }, { data: pendingInvoices }, { data: journey }, { data: marks }] =
     await Promise.all([
