@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useRef, type ReactNode } from "react";
 import { motion, useReducedMotion, useScroll, useTransform, type MotionValue } from "motion/react";
 import { CrownPal, HeartPal, StarPal } from "@/components/brand/mascots";
@@ -131,6 +132,7 @@ function MiniTimeline() {
 const CARDS = [
   {
     url: "lewistutoring.co.za/kids",
+    icon: "badges",
     label: "The kids' space",
     sub: "Badges, streaks & missions that make practice feel like play.",
     body: <MiniKid />,
@@ -139,6 +141,7 @@ const CARDS = [
   },
   {
     url: "lewistutoring.co.za/parents",
+    icon: "performance",
     label: "The parents' view",
     sub: "Attendance, marks and progress — confidence at a glance.",
     body: <MiniParent />,
@@ -147,6 +150,7 @@ const CARDS = [
   },
   {
     url: "lewistutoring.co.za/journey",
+    icon: "goals",
     label: "The journey timeline",
     sub: "A living record of every milestone on the way up.",
     body: <MiniTimeline />,
@@ -201,7 +205,10 @@ function PreviewCard({
     >
       <BrowserFrame url={card.url}>{card.body}</BrowserFrame>
       <div className="mt-4 text-center">
-        <p className="font-display font-bold text-lg">{card.label}</p>
+        <p className="flex items-center justify-center gap-2 font-display font-bold text-lg">
+          <Image src={`/icons/${card.icon}.webp`} alt="" width={26} height={26} />
+          {card.label}
+        </p>
         <p className="text-sm text-ink-soft">{card.sub}</p>
       </div>
     </motion.div>

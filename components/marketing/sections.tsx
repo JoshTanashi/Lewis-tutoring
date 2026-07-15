@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { Logo } from "@/components/brand/logo";
 import {
@@ -101,25 +102,25 @@ export function About() {
 
 const STEPS = [
   {
-    emoji: "👋",
+    icon: "students",
     title: "Tell us about your child",
     text: "A quick, friendly sign-up — their grade, subjects and what they're dreaming of.",
     bg: "bg-pastel-pink",
   },
   {
-    emoji: "🗓️",
+    icon: "calender",
     title: "Pick a time that fits",
     text: "See the live calendar and grab a slot that suits your family's week.",
     bg: "bg-pastel-yellow",
   },
   {
-    emoji: "✨",
+    icon: "lessons",
     title: "Meet for a first lesson",
     text: `A get-to-know-you assessment lesson for just ${formatZar(INTRO_LESSON_ZAR)} — goals set together.`,
     bg: "bg-pastel-green",
   },
   {
-    emoji: "📈",
+    icon: "progress",
     title: "Watch confidence grow",
     text: "Progress reports, badges and a journey timeline you can follow every step.",
     bg: "bg-pastel-purple",
@@ -141,7 +142,13 @@ export function HowItWorks() {
               <span className="font-display font-bold text-ink-soft/60 text-sm">
                 STEP {i + 1}
               </span>
-              <p className="mt-1 text-4xl">{s.emoji}</p>
+              <Image
+                src={`/icons/${s.icon}.webp`}
+                alt=""
+                width={56}
+                height={56}
+                className="mt-2"
+              />
               <h3 className="mt-3 font-display font-bold text-xl">{s.title}</h3>
               <p className="mt-2 text-sm text-ink-soft leading-relaxed">{s.text}</p>
             </Card>

@@ -13,6 +13,7 @@ import {
 } from "@/components/brand/mascots";
 import { Button, Card, Chip, Field, Input, Select } from "@/components/ui";
 import { createBrowserSupabase } from "@/lib/supabase/client";
+import { functionUrl } from "@/lib/supabase/config";
 
 type Kid = {
   id: string;
@@ -57,7 +58,7 @@ function KidLoginForm({ kid, onDone }: { kid: Kid; onDone: () => void }) {
       const {
         data: { session },
       } = await supabase.auth.getSession();
-      const res = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/create-kid`, {
+      const res = await fetch(functionUrl("create-kid"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

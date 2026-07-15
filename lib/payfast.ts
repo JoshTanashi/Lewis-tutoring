@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import { SUPABASE_URL } from "./supabase/config";
 
 /** PayFast checkout helper — builds the signed form POSTed to PayFast.
  *  Sandbox by default; set PAYFAST_MODE=live + real credentials to go live. */
@@ -40,8 +41,14 @@ export function buildCheckout(input: {
   buyerEmail: string;
 }): PayfastCheckout {
   const { merchant_id, merchant_key, passphrase } = creds();
-  const site = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
-  const notifyBase = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  // Site URL for PayFast return links: explicit env var wins, then Vercel's
+  // auto-provided production domain, then localhost for dev.
+  const site =
+    process.env.NEXT_PUBLIC_SITE_URL ??
+    (process.env.VERCEL_PROJECT_PRODUCTION_URL
+      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+      : "http://localhost:3000");
+  const notifyBase = SUPABASE_URL;
 
   // Field order matters for the signature — keep PayFast's documented order.
   const fields: Array<[string, string]> = [

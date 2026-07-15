@@ -6,6 +6,7 @@ import { Suspense, useState } from "react";
 import { StarPal } from "@/components/brand/mascots";
 import { Button, Card, Field, Input } from "@/components/ui";
 import { createBrowserSupabase } from "@/lib/supabase/client";
+import { functionUrl } from "@/lib/supabase/config";
 
 function SignupForm() {
   const router = useRouter();
@@ -22,14 +23,11 @@ function SignupForm() {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/auth-signup`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(form),
-        },
-      );
+      const res = await fetch(functionUrl("auth-signup"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? "Something went wrong — please try again.");
 
