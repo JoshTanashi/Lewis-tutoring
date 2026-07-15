@@ -5,14 +5,16 @@ import { useState } from "react";
 import { addSlot, toggleSlot } from "@/app/actions/tutor";
 import { Button, Card, Field, Input, Select } from "@/components/ui";
 
-type Slot = { id: string; weekday: number; start_time: string; mode: string; active: boolean };
+type Slot = { id: string; weekday: number; start_time: string; active: boolean; tutor_id: string | null };
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-export function AvailabilityEditor({ slots }: { slots: Slot[] }) {
+/** Weekly availability editor — used by tutors (their own) and by the super
+ *  admin (any tutor, or the general pool when tutorId is null). */
+export function AvailabilityEditor({ slots, tutorId }: { slots: Slot[]; tutorId: string | null }) {
   const router = useRouter();
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [draft, setDraft] = useState({ weekday: "1", time: "14:00", mode: "both" });
+  const [draft, setDraft] = useState({ weekday: "1", time: "14:00" });
   const [msg, setMsg] = useState<string | null>(null);
 
   async function toggle(slot: Slot) {
@@ -24,7 +26,7 @@ export function AvailabilityEditor({ slots }: { slots: Slot[] }) {
 
   async function add() {
     setMsg(null);
-    const res = await addSlot(Number(draft.weekday), draft.time, draft.mode);
+    const res = await addSlot(Number(draft.weekday), draft.time, tutorId);
     if (!res.ok) setMsg(res.error);
     router.refresh();
   }
@@ -52,15 +54,20 @@ export function AvailabilityEditor({ slots }: { slots: Slot[] }) {
                     title={s.active ? "Click to switch off" : "Click to switch on"}
                   >
                     {s.start_time.slice(0, 5)}
-                    {s.mode !== "both" && (s.mode === "online" ? " 💻" : " 🏡")}
                   </button>
                 ))}
               </div>
             </Card>
           );
         })}
+        {slots.length === 0 && (
+          <Card className="p-6 text-center text-sm text-ink-soft">
+            No slots yet — add the first one on the right! →
+          </Card>
+        )}
         <p className="text-xs text-ink-soft">
-          💡 Green = bookable. Click a time to switch it on or off — existing bookings stay put.
+          💡 Green = bookable online lesson. Click a time to switch it on or off — existing
+          bookings stay put.
         </p>
       </div>
 
@@ -78,13 +85,6 @@ export function AvailabilityEditor({ slots }: { slots: Slot[] }) {
           </Field>
           <Field label="Start time">
             <Input type="time" value={draft.time} onChange={(e) => setDraft({ ...draft, time: e.target.value })} />
-          </Field>
-          <Field label="Mode">
-            <Select value={draft.mode} onChange={(e) => setDraft({ ...draft, mode: e.target.value })}>
-              <option value="both">🏡 + 💻 Both</option>
-              <option value="in_person">🏡 In person only</option>
-              <option value="online">💻 Online only</option>
-            </Select>
           </Field>
           {msg && <p className="rounded-xl bg-pastel-pink px-3 py-2 text-xs font-bold text-coral-deep">{msg}</p>}
           <Button onClick={add} className="w-full">

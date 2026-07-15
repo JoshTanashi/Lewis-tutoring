@@ -3,12 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import {
-  addChild,
-  bookFirstLesson,
-  saveParentDetails,
-  startCheckout,
-} from "@/app/actions/onboarding";
+import { completeOnboarding, type OnboardingPayload } from "@/app/actions/onboarding";
 import { Logo } from "@/components/brand/logo";
 import { submitPayfast } from "@/components/portal/payfast-submit";
 import {
@@ -30,9 +25,11 @@ import {
   Select,
   Textarea,
 } from "@/components/ui";
+import { createBrowserSupabase } from "@/lib/supabase/client";
+import { functionUrl } from "@/lib/supabase/config";
 import { formatZar } from "@/lib/pricing";
 
-type Subject = { id: number; name: string; emoji: string; color: string };
+type Subject = { id: number; name: string; emoji: string };
 type Pkg = {
   slug: string;
   name: string;
@@ -44,9 +41,7 @@ type Pkg = {
   blurb: string;
   popular: boolean;
 };
-type Slot = { slot_at: string; mode: string; duration_minutes: number };
-
-const STEPS = ["You", "Your child", "First lesson", "Plan", "The promise", "Pay"] as const;
+type Slot = { slot_at: string; duration_minutes: number; tutor_id: string | null };
 
 const MASCOTS = [
   { slug: "star", label: "Twinkle", el: <StarPal size={54} /> },
@@ -57,58 +52,72 @@ const MASCOTS = [
   { slug: "blob-lilac", label: "Plum", el: <BlobPal size={54} color="var(--color-lilac)" /> },
 ] as const;
 
-const GRADES = ["Grade R prep", "Grade R", ...Array.from({ length: 12 }, (_, i) => `Grade ${i + 1}`)];
+const ALL_GRADES = ["Grade R prep", "Grade R", ...Array.from({ length: 12 }, (_, i) => `Grade ${i + 1}`)];
+const SELF_GRADES = [...Array.from({ length: 7 }, (_, i) => `Grade ${i + 6}`), "Matric rewrite / Post-school"];
 
-const CHEERS = [
-  "Hi there! Let's introduce ourselves 👋",
-  "Tell us about your superstar ⭐",
-  "Pick the perfect time 🗓️",
-  "Choose your adventure 🚀",
-  "The grown-up bit (almost there!) 🤝",
-  "High five! Let's make it official 🎉",
-];
+function gradeToAgeBand(grade: string): "young" | "teen" {
+  const m = grade.match(/Grade (\d+)/);
+  if (!m) return grade.includes("Post-school") || grade.includes("Matric") ? "teen" : "young";
+  return Number(m[1]) >= 6 ? "teen" : "young";
+}
 
 export function OnboardingWizard({
-  profile,
   subjects,
   packages,
   slots,
   preselectedPackage,
+  existingUser,
 }: {
-  profile: { full_name: string; phone: string };
   subjects: Subject[];
   packages: Pkg[];
   slots: Slot[];
   preselectedPackage: string | null;
+  existingUser: { email: string; full_name: string; phone: string } | null;
 }) {
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // collected state
-  const [parent, setParent] = useState(profile);
+  const [who, setWho] = useState<"parent" | "self" | null>(null);
+  const [account, setAccount] = useState({
+    full_name: existingUser?.full_name ?? "",
+    email: existingUser?.email ?? "",
+    phone: existingUser?.phone ?? "",
+    password: "",
+    password2: "",
+  });
   const [child, setChild] = useState({
     full_name: "",
     grade: "",
-    school: "",
-    birthdate: "",
     mascot: "star",
     subject_ids: [] as number[],
+    other_on: false,
+    other_subjects: "",
     goals: "",
-    learning_style: "",
-    medical_notes: "",
+    care_notes: "",
   });
-  const [studentId, setStudentId] = useState<string | null>(null);
-  const [slotAt, setSlotAt] = useState<string | null>(null);
-  const [bookedSlotAt, setBookedSlotAt] = useState<string | null>(null);
-  const [mode, setMode] = useState<"online" | "in_person">("in_person");
-  const [firstSubject, setFirstSubject] = useState<number | null>(null);
   const [pkg, setPkg] = useState<string>(
     preselectedPackage && packages.some((p) => p.slug === preselectedPackage)
       ? preselectedPackage
       : "intro",
   );
+  const [picked, setPicked] = useState<Slot[]>([]);
   const [agree, setAgree] = useState({ terms: false, privacy: false, payments: false });
+
+  const chosenPkg = packages.find((p) => p.slug === pkg);
+  const requiredSlots = chosenPkg?.lessons_per_month ?? 1;
+
+  // steps: 0 who · 1 about you · 2 the learner · 3 adventure · 4 times · 5 promise · 6 pay
+  const STEP_LABELS = ["Hello", "You", who === "self" ? "Your goals" : "Your child", "Plan", "Times", "Promise", "Pay"];
+  const CHEERS = [
+    "Welcome! Who are we signing up today? 👋",
+    who === "self" ? "Tell us about yourself 🎓" : "First, a little about you 💛",
+    who === "self" ? "What are we conquering? 🚀" : "Now, tell us about your superstar ⭐",
+    "Choose your adventure 🗺️",
+    `Pick your lesson time${requiredSlots > 1 ? "s" : ""} 🗓️`,
+    "The grown-up bit (almost there!) 🤝",
+    "High five! Let's make it official 🎉",
+  ];
 
   const slotsByDay = useMemo(() => {
     const map = new Map<string, Slot[]>();
@@ -119,57 +128,13 @@ export function OnboardingWizard({
     return [...map.entries()];
   }, [slots]);
 
-  const chosenPkg = packages.find((p) => p.slug === pkg);
-
-  async function next() {
-    setError(null);
-    setBusy(true);
-    try {
-      if (step === 0) {
-        if (parent.full_name.trim().length < 2) throw new Error("Please tell us your name!");
-        const res = await saveParentDetails(parent);
-        if (!res.ok) throw new Error(res.error);
-      }
-      if (step === 1) {
-        if (child.full_name.trim().length < 2) throw new Error("What's your child's name?");
-        if (!child.grade) throw new Error("Please pick a grade.");
-        if (!child.subject_ids.length) throw new Error("Pick at least one subject.");
-        if (!studentId) {
-          const res = await addChild(child);
-          if (!res.ok) throw new Error(res.error);
-          setStudentId(res.student_id);
-        }
-      }
-      if (step === 2) {
-        if (!slotAt) throw new Error("Pick a time for the first lesson!");
-        if (bookedSlotAt !== slotAt) {
-          const res = await bookFirstLesson({
-            student_id: studentId!,
-            subject_id: firstSubject ?? child.subject_ids[0] ?? null,
-            slot_at: slotAt,
-            mode,
-          });
-          if (!res.ok) throw new Error(res.error);
-          setBookedSlotAt(slotAt);
-        }
-      }
-      if (step === 4) {
-        if (!agree.terms || !agree.privacy || !agree.payments) {
-          throw new Error("Please tick all three boxes so we can continue.");
-        }
-      }
-      if (step === 5) {
-        const res = await startCheckout({ package_slug: pkg, student_id: studentId! });
-        if (!res.ok) throw new Error(res.error);
-        submitPayfast(res.checkout); // navigating away
-        return;
-      }
-      setStep((s) => s + 1);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
+  function toggleSlot(s: Slot) {
+    setPicked((prev) => {
+      const on = prev.some((p) => p.slot_at === s.slot_at);
+      if (on) return prev.filter((p) => p.slot_at !== s.slot_at);
+      if (prev.length >= requiredSlots) return prev; // full — deselect one first
+      return [...prev, s];
+    });
   }
 
   const toggleSubject = (id: number) =>
@@ -180,19 +145,125 @@ export function OnboardingWizard({
         : [...c.subject_ids, id],
     }));
 
+  async function next() {
+    setError(null);
+    try {
+      if (step === 0 && !who) throw new Error("Pick one so we know how to greet you!");
+      if (step === 1) {
+        if (account.full_name.trim().length < 2) throw new Error("Please tell us your name!");
+        if (!existingUser && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(account.email.trim()))
+          throw new Error("We need a valid email for your invoices & login.");
+        if (who === "self" && !child.grade) throw new Error("Pick your grade.");
+        if (who === "self") setChild((c) => ({ ...c, full_name: account.full_name }));
+      }
+      if (step === 2) {
+        if (who === "parent" && child.full_name.trim().length < 2)
+          throw new Error("What's your child's name?");
+        if (who === "parent" && !child.grade) throw new Error("Please pick a grade.");
+        if (!child.subject_ids.length && !(child.other_on && child.other_subjects.trim()))
+          throw new Error("Pick at least one subject (or fill in your own).");
+      }
+      if (step === 4 && picked.length !== requiredSlots)
+        throw new Error(
+          `Your ${chosenPkg?.name ?? "plan"} includes ${requiredSlots} lesson${requiredSlots > 1 ? "s" : ""} — pick ${requiredSlots - picked.length} more time${requiredSlots - picked.length > 1 ? "s" : ""}.`,
+        );
+      if (step === 5 && !(agree.terms && agree.privacy && agree.payments))
+        throw new Error("Please tick all three boxes so we can continue.");
+      if (step === 6) {
+        await payNow();
+        return;
+      }
+      // moving from package step: trim picked slots if the plan shrank
+      if (step === 3) setPicked((prev) => prev.slice(0, requiredSlots));
+      setStep((s) => s + 1);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function payNow() {
+    if (busy) return; // double-click = double-payment risk; never twice
+    setBusy(true);
+    setError(null);
+    try {
+      const supabase = createBrowserSupabase();
+      if (!existingUser) {
+        if (account.password.length < 8) throw new Error("Password must be at least 8 characters.");
+        if (account.password !== account.password2) throw new Error("Passwords don't match!");
+        // the account is born right here — no dead accounts from abandoned wizards
+        const res = await fetch(functionUrl("auth-signup"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: account.email,
+            password: account.password,
+            full_name: account.full_name,
+            phone: account.phone || null,
+            self_student: who === "self",
+          }),
+        });
+        const body = await res.json();
+        if (!res.ok) {
+          if (/already have an account/i.test(body.error ?? "")) {
+            throw new Error("You already have an account — sign in first, then book from your portal!");
+          }
+          throw new Error(body.error ?? "Could not create your account.");
+        }
+        const { error: signInErr } = await supabase.auth.signInWithPassword({
+          email: account.email.trim().toLowerCase(),
+          password: account.password,
+        });
+        if (signInErr) throw new Error("Account created — please sign in to finish up.");
+      }
+
+      const payload: OnboardingPayload = {
+        who: who!,
+        parent: { full_name: account.full_name, phone: account.phone },
+        child: {
+          full_name: who === "self" ? account.full_name : child.full_name,
+          grade: child.grade,
+          age_band: gradeToAgeBand(child.grade),
+          mascot: gradeToAgeBand(child.grade) === "young" ? child.mascot : "star",
+          subject_ids: child.subject_ids,
+          other_subjects: child.other_on ? child.other_subjects : undefined,
+          goals: child.goals,
+          care_notes: child.care_notes,
+        },
+        package_slug: pkg,
+        slots: picked.map((p) => ({ slot_at: p.slot_at, tutor_id: p.tutor_id })),
+      };
+      const res = await completeOnboarding(payload);
+      if (!res.ok) throw new Error(res.error);
+      submitPayfast(res.checkout); // navigating away to PayFast
+    } catch (err) {
+      setError((err as Error).message);
+      setBusy(false);
+    }
+  }
+
+  const mascotFor = [
+    <HeartPal key={0} size={50} mood="excited" />,
+    <StarPal key={1} size={50} mood="excited" />,
+    who === "self" ? <BlobPal key={2} size={50} color="var(--color-sky)" mood="excited" /> : <CloudPal key={2} size={50} />,
+    <BlobPal key={3} size={50} color="var(--color-grass)" mood="excited" />,
+    <PencilPal key={4} size={50} />,
+    <HeartPal key={5} size={50} />,
+    <StarPal key={6} size={50} mood="excited" />,
+  ][step];
+
   return (
     <main className="min-h-screen bg-cream dotted-paper px-4 py-8">
       <div className="mx-auto max-w-2xl">
         <div className="mb-6 flex items-center justify-between">
           <Logo size="sm" />
           <Chip tone="sunshine">
-            Step {step + 1} of {STEPS.length}
+            Step {step + 1} of {STEP_LABELS.length}
           </Chip>
         </div>
-        <RainbowProgress value={((step + 1) / STEPS.length) * 100} label="onboarding progress" />
+        <RainbowProgress value={((step + 1) / STEP_LABELS.length) * 100} label="onboarding progress" />
         <div className="mt-2 mb-6 flex justify-between text-[10px] font-bold text-ink-soft">
-          {STEPS.map((s, i) => (
-            <span key={s} className={i <= step ? "text-navy" : ""}>
+          {STEP_LABELS.map((s, i) => (
+            <span key={i} className={i <= step ? "text-navy" : ""}>
               {s}
             </span>
           ))}
@@ -208,62 +279,113 @@ export function OnboardingWizard({
           >
             <Card className="p-7">
               <div className="mb-5 flex items-center gap-3">
-                <div className="animate-bounce-soft">
-                  {[
-                    <HeartPal key={0} size={50} mood="excited" />,
-                    <StarPal key={1} size={50} mood="excited" />,
-                    <CloudPal key={2} size={50} />,
-                    <BlobPal key={3} size={50} color="var(--color-grass)" mood="excited" />,
-                    <PencilPal key={4} size={50} />,
-                    <StarPal key={5} size={50} mood="excited" />,
-                  ][step]}
-                </div>
+                <div className="animate-bounce-soft">{mascotFor}</div>
                 <h1 className="font-display font-bold text-xl sm:text-2xl">{CHEERS[step]}</h1>
               </div>
 
               {step === 0 && (
-                <div className="space-y-4">
-                  <Field label="Your full name">
-                    <Input
-                      value={parent.full_name}
-                      onChange={(e) => setParent({ ...parent, full_name: e.target.value })}
-                      placeholder="e.g. Sam Naidoo"
-                    />
-                  </Field>
-                  <Field label="Phone number" optional hint="For lesson reminders and quick chats.">
-                    <Input
-                      type="tel"
-                      value={parent.phone}
-                      onChange={(e) => setParent({ ...parent, phone: e.target.value })}
-                      placeholder="e.g. 082 123 4567"
-                    />
-                  </Field>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => setWho("parent")}
+                    className={`squash rounded-3xl border-2 p-6 text-left ${
+                      who === "parent" ? "border-navy bg-pastel-pink" : "border-line bg-paper"
+                    }`}
+                  >
+                    <HeartPal size={56} mood="excited" />
+                    <p className="mt-3 font-display font-bold text-lg">I&apos;m a parent</p>
+                    <p className="text-sm text-ink-soft">
+                      Signing up my child (or children!) for lessons.
+                    </p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWho("self")}
+                    className={`squash rounded-3xl border-2 p-6 text-left ${
+                      who === "self" ? "border-navy bg-pastel-blue" : "border-line bg-paper"
+                    }`}
+                  >
+                    <BlobPal size={56} color="var(--color-sky)" mood="excited" />
+                    <p className="mt-3 font-display font-bold text-lg">I&apos;m a student</p>
+                    <p className="text-sm text-ink-soft">
+                      Grade 6 and up — signing up for myself, like a boss.
+                    </p>
+                  </button>
                 </div>
               )}
 
               {step === 1 && (
                 <div className="space-y-4">
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <Field label="Child's name">
+                  <Field label={who === "self" ? "Your full name" : "Your full name"}>
+                    <Input
+                      value={account.full_name}
+                      onChange={(e) => setAccount({ ...account, full_name: e.target.value })}
+                      placeholder={who === "self" ? "e.g. Thabo Naidoo" : "e.g. Sam Naidoo"}
+                      autoComplete="name"
+                    />
+                  </Field>
+                  {!existingUser && (
+                    <Field label="Email" hint="Asked once — used for your login and invoices. No spam, ever.">
                       <Input
-                        value={child.full_name}
-                        onChange={(e) => setChild({ ...child, full_name: e.target.value })}
-                        placeholder="e.g. Zoë"
+                        type="email"
+                        value={account.email}
+                        onChange={(e) => setAccount({ ...account, email: e.target.value })}
+                        placeholder="you@example.com"
+                        autoComplete="email"
                       />
                     </Field>
-                    <Field label="Grade">
+                  )}
+                  {who === "self" && (
+                    <Field label="Your grade">
                       <Select
                         value={child.grade}
                         onChange={(e) => setChild({ ...child, grade: e.target.value })}
                       >
-                        <option value="">Choose a grade…</option>
-                        {GRADES.map((g) => (
+                        <option value="">Choose your grade…</option>
+                        {SELF_GRADES.map((g) => (
                           <option key={g}>{g}</option>
                         ))}
                       </Select>
                     </Field>
-                  </div>
-                  <Field label="Subjects to work on">
+                  )}
+                  <Field label="Phone" optional hint="For quick lesson reminders on WhatsApp.">
+                    <Input
+                      type="tel"
+                      value={account.phone}
+                      onChange={(e) => setAccount({ ...account, phone: e.target.value })}
+                      placeholder="e.g. 082 123 4567"
+                      autoComplete="tel"
+                    />
+                  </Field>
+                </div>
+              )}
+
+              {step === 2 && (
+                <div className="space-y-4">
+                  {who === "parent" && (
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <Field label="Child's name">
+                        <Input
+                          value={child.full_name}
+                          onChange={(e) => setChild({ ...child, full_name: e.target.value })}
+                          placeholder="e.g. Zoë"
+                        />
+                      </Field>
+                      <Field label="Grade">
+                        <Select
+                          value={child.grade}
+                          onChange={(e) => setChild({ ...child, grade: e.target.value })}
+                        >
+                          <option value="">Choose a grade…</option>
+                          {ALL_GRADES.map((g) => (
+                            <option key={g}>{g}</option>
+                          ))}
+                        </Select>
+                      </Field>
+                    </div>
+                  )}
+
+                  <Field label={who === "self" ? "Subjects you want help with" : "Subjects to work on"}>
                     <div className="flex flex-wrap gap-2">
                       {subjects.map((s) => {
                         const on = child.subject_ids.includes(s.id);
@@ -282,158 +404,79 @@ export function OnboardingWizard({
                           </button>
                         );
                       })}
-                    </div>
-                  </Field>
-                  <Field label="Pick a buddy!" hint="Your child's little friend inside the app.">
-                    <div className="flex flex-wrap gap-3">
-                      {MASCOTS.map((m) => (
-                        <button
-                          key={m.slug}
-                          type="button"
-                          onClick={() => setChild({ ...child, mascot: m.slug })}
-                          className={`squash flex flex-col items-center gap-1 rounded-2xl border-2 p-2.5 ${
-                            child.mascot === m.slug
-                              ? "border-navy bg-pastel-yellow"
-                              : "border-line bg-paper"
-                          }`}
-                        >
-                          {m.el}
-                          <span className="text-[10px] font-bold text-ink-soft">{m.label}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </Field>
-                  <details className="rounded-2xl border-2 border-line bg-paper p-4">
-                    <summary className="cursor-pointer font-display font-bold text-sm text-navy">
-                      Optional extras (school, goals, anything we should know)
-                    </summary>
-                    <div className="mt-4 space-y-4">
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <Field label="School" optional>
-                          <Input
-                            value={child.school}
-                            onChange={(e) => setChild({ ...child, school: e.target.value })}
-                          />
-                        </Field>
-                        <Field label="Birthday" optional>
-                          <Input
-                            type="date"
-                            value={child.birthdate}
-                            onChange={(e) => setChild({ ...child, birthdate: e.target.value })}
-                          />
-                        </Field>
-                      </div>
-                      <Field label="Learning style" optional>
-                        <Select
-                          value={child.learning_style}
-                          onChange={(e) => setChild({ ...child, learning_style: e.target.value })}
-                        >
-                          <option value="">Not sure yet</option>
-                          <option>Visual — pictures & diagrams</option>
-                          <option>Hands-on — learning by doing</option>
-                          <option>Listening — talking it through</option>
-                          <option>Reading & writing</option>
-                        </Select>
-                      </Field>
-                      <Field label="Goals & dreams" optional>
-                        <Textarea
-                          value={child.goals}
-                          onChange={(e) => setChild({ ...child, goals: e.target.value })}
-                          placeholder="e.g. Feel confident with fractions, love reading…"
-                        />
-                      </Field>
-                      <Field
-                        label="Anything else we should know?"
-                        optional
-                        hint="Allergies, concentration, anything that helps us care for them."
+                      <button
+                        type="button"
+                        onClick={() => setChild((c) => ({ ...c, other_on: !c.other_on }))}
+                        className={`squash rounded-full px-4 py-2 text-sm font-bold border-2 ${
+                          child.other_on
+                            ? "border-navy bg-pastel-purple text-navy"
+                            : "border-dashed border-line bg-paper text-ink-soft hover:border-lilac"
+                        }`}
                       >
-                        <Textarea
-                          value={child.medical_notes}
-                          onChange={(e) => setChild({ ...child, medical_notes: e.target.value })}
-                        />
-                      </Field>
+                        ✏️ Something else…
+                      </button>
                     </div>
-                  </details>
-                </div>
-              )}
+                  </Field>
+                  {child.other_on && (
+                    <Field label="Tell us the subject(s)" hint="We'll match the right tutor for it.">
+                      <Input
+                        value={child.other_subjects}
+                        onChange={(e) => setChild({ ...child, other_subjects: e.target.value })}
+                        placeholder="e.g. Accounting, French, chess…"
+                      />
+                    </Field>
+                  )}
 
-              {step === 2 && (
-                <div className="space-y-4">
-                  <p className="text-sm text-ink-soft -mt-2">
-                    These are Miss Lewis&apos; open times for the next two weeks — grab the one
-                    that fits your week best.
-                  </p>
-                  <Field label="Subject for the first lesson">
-                    <Select
-                      value={firstSubject ?? child.subject_ids[0] ?? ""}
-                      onChange={(e) => setFirstSubject(Number(e.target.value))}
-                    >
-                      {child.subject_ids.map((id) => {
-                        const s = subjects.find((x) => x.id === id);
-                        return s ? (
-                          <option key={id} value={id}>
-                            {s.emoji} {s.name}
-                          </option>
-                        ) : null;
-                      })}
-                    </Select>
-                  </Field>
-                  <Field label="Online or in person?">
-                    <div className="flex gap-2">
-                      {(["in_person", "online"] as const).map((m) => (
-                        <button
-                          key={m}
-                          type="button"
-                          onClick={() => setMode(m)}
-                          className={`squash rounded-full border-2 px-5 py-2 text-sm font-bold ${
-                            mode === m ? "border-navy bg-pastel-blue text-navy" : "border-line text-ink-soft"
-                          }`}
-                        >
-                          {m === "in_person" ? "🏡 In person" : "💻 Online"}
-                        </button>
-                      ))}
-                    </div>
-                  </Field>
-                  <div className="max-h-72 space-y-4 overflow-y-auto rounded-2xl border-2 border-line bg-paper p-4">
-                    {slotsByDay.length === 0 && (
-                      <p className="text-sm text-ink-soft">
-                        No open slots right now — please contact Miss Lewis directly!
-                      </p>
-                    )}
-                    {slotsByDay.map(([day, daySlots]) => (
-                      <div key={day}>
-                        <p className="mb-2 font-display font-bold text-sm">
-                          {new Date(day).toLocaleDateString("en-ZA", {
-                            weekday: "long",
-                            day: "numeric",
-                            month: "long",
-                          })}
-                        </p>
-                        <div className="flex flex-wrap gap-2">
-                          {daySlots
-                            .filter((s) => s.mode === "both" || s.mode === mode)
-                            .map((s) => {
-                              const t = new Date(s.slot_at);
-                              const on = slotAt === s.slot_at;
-                              return (
-                                <button
-                                  key={s.slot_at}
-                                  type="button"
-                                  onClick={() => setSlotAt(s.slot_at)}
-                                  className={`squash rounded-full border-2 px-4 py-1.5 text-sm font-bold ${
-                                    on
-                                      ? "border-navy bg-grass text-white"
-                                      : "border-line bg-cream text-navy hover:border-grass"
-                                  }`}
-                                >
-                                  {t.toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit" })}
-                                </button>
-                              );
-                            })}
-                        </div>
+                  {who === "parent" && child.grade && gradeToAgeBand(child.grade) === "young" && (
+                    <Field label="Pick a buddy!" hint="Their little friend inside the app — it cheers them on.">
+                      <div className="flex flex-wrap gap-3">
+                        {MASCOTS.map((m) => (
+                          <button
+                            key={m.slug}
+                            type="button"
+                            onClick={() => setChild({ ...child, mascot: m.slug })}
+                            className={`squash flex flex-col items-center gap-1 rounded-2xl border-2 p-2.5 ${
+                              child.mascot === m.slug ? "border-navy bg-pastel-yellow" : "border-line bg-paper"
+                            }`}
+                          >
+                            {m.el}
+                            <span className="text-[10px] font-bold text-ink-soft">{m.label}</span>
+                          </button>
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                    </Field>
+                  )}
+
+                  <Field
+                    label={who === "self" ? "What are you aiming for?" : "Goals & dreams"}
+                    optional
+                  >
+                    <Textarea
+                      value={child.goals}
+                      onChange={(e) => setChild({ ...child, goals: e.target.value })}
+                      placeholder={
+                        who === "self"
+                          ? "e.g. Pass maths with 70%+, feel ready for finals…"
+                          : "e.g. Feel confident with fractions, love reading…"
+                      }
+                    />
+                  </Field>
+                  <Field
+                    label={
+                      who === "self"
+                        ? "Anything your tutor should know?"
+                        : gradeToAgeBand(child.grade || "Grade 1") === "teen"
+                          ? "Anything the tutor should know?"
+                          : "Anything we should know?"
+                    }
+                    optional
+                    hint="Learning style, concentration, allergies — whatever helps us care."
+                  >
+                    <Textarea
+                      value={child.care_notes}
+                      onChange={(e) => setChild({ ...child, care_notes: e.target.value })}
+                    />
+                  </Field>
                 </div>
               )}
 
@@ -455,6 +498,7 @@ export function OnboardingWizard({
                           <span className="flex items-center gap-2 font-display font-bold">
                             {p.name}
                             {p.popular && <Chip tone="coral">Most loved</Chip>}
+                            {p.slug === "intro" && <Chip tone="grass">Perfect first step</Chip>}
                           </span>
                           <span className="block text-xs text-ink-soft">{p.blurb}</span>
                         </span>
@@ -462,27 +506,88 @@ export function OnboardingWizard({
                           <span className="block font-display font-bold text-lg">
                             {formatZar(p.price_cents / 100)}
                           </span>
-                          {p.save_cents > 0 && (
-                            <span className="text-xs font-bold text-grass-deep">
-                              save {formatZar(p.save_cents / 100)}
-                            </span>
-                          )}
+                          <span className="text-xs font-bold text-ink-soft">
+                            {p.lessons_per_month} lesson{p.lessons_per_month > 1 ? "s" : ""}
+                          </span>
                         </span>
                       </button>
                     );
                   })}
+                  {pkg === "intro" && (
+                    <p className="rounded-2xl bg-pastel-green px-4 py-2.5 text-xs font-bold text-grass-deep">
+                      ✨ Assessment lesson chosen — your tutor and the Lewis team are told to
+                      prepare a get-to-know-you assessment.
+                    </p>
+                  )}
                   <p className="text-xs text-ink-soft">
-                    💡 Siblings get 10% off monthly packages automatically. You can change or
-                    pause your plan any time.
+                    💡 All lessons are live online video lessons. Siblings get 10% off monthly
+                    plans automatically.
                   </p>
                 </div>
               )}
 
               {step === 4 && (
                 <div className="space-y-4">
+                  <div className="flex items-center justify-between rounded-2xl bg-pastel-blue px-4 py-3">
+                    <p className="text-sm font-bold">
+                      {chosenPkg?.emoji} {chosenPkg?.name}: pick{" "}
+                      <strong>{requiredSlots}</strong> time{requiredSlots > 1 ? "s" : ""}
+                    </p>
+                    <Chip tone={picked.length === requiredSlots ? "grass" : "sunshine"}>
+                      {picked.length} / {requiredSlots} picked
+                    </Chip>
+                  </div>
+                  <div className="max-h-80 space-y-4 overflow-y-auto rounded-2xl border-2 border-line bg-paper p-4">
+                    {slotsByDay.length === 0 && (
+                      <p className="text-sm text-ink-soft">
+                        No open slots right now — please check back soon or{" "}
+                        <Link href="/#contact" className="font-bold underline">say hello</Link>!
+                      </p>
+                    )}
+                    {slotsByDay.map(([day, daySlots]) => (
+                      <div key={day}>
+                        <p className="mb-2 font-display font-bold text-sm">
+                          {new Date(day).toLocaleDateString("en-ZA", {
+                            weekday: "long",
+                            day: "numeric",
+                            month: "long",
+                          })}
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {daySlots.map((s) => {
+                            const on = picked.some((p) => p.slot_at === s.slot_at);
+                            const full = picked.length >= requiredSlots && !on;
+                            return (
+                              <button
+                                key={s.slot_at}
+                                type="button"
+                                onClick={() => toggleSlot(s)}
+                                disabled={full}
+                                className={`squash rounded-full border-2 px-4 py-1.5 text-sm font-bold disabled:opacity-40 ${
+                                  on
+                                    ? "border-navy bg-grass text-white"
+                                    : "border-line bg-cream text-navy hover:border-grass"
+                                }`}
+                              >
+                                {new Date(s.slot_at).toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit" })}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-ink-soft">
+                    💻 All lessons happen online — your tutor sends the video link before each
+                    lesson. Picked too many? Tap a green time to unpick it.
+                  </p>
+                </div>
+              )}
+
+              {step === 5 && (
+                <div className="space-y-4">
                   <p className="text-sm text-ink-soft -mt-2">
-                    The not-so-fine print — short, honest, and written for humans. Please have a
-                    quick read and tick the boxes.
+                    The not-so-fine print — short, honest, and written for humans.
                   </p>
                   <div className="space-y-3 rounded-2xl border-2 border-line bg-paper p-5">
                     <Checkbox
@@ -507,7 +612,7 @@ export function OnboardingWizard({
                           <Link href="/privacy" target="_blank" className="font-bold text-sky-deep underline">
                             Privacy Policy
                           </Link>{" "}
-                          — my family&apos;s data is used only to run our lessons, never sold.
+                          — our data is used only to run lessons, never sold.
                         </>
                       }
                     />
@@ -516,43 +621,78 @@ export function OnboardingWizard({
                       onChange={(e) => setAgree({ ...agree, payments: e.target.checked })}
                       label={
                         <>I authorise Lewis Tutoring to bill the plan I chose via PayFast, and I
-                        understand monthly plans renew until I pause or cancel them.</>
+                        understand monthly plans renew until paused or cancelled.</>
                       }
                     />
                   </div>
                 </div>
               )}
 
-              {step === 5 && chosenPkg && (
+              {step === 6 && chosenPkg && (
                 <div className="space-y-4">
                   <div className="rounded-2xl bg-pastel-green p-5">
                     <p className="font-display font-bold text-lg">Your order 🧾</p>
                     <div className="mt-2 flex items-center justify-between text-sm">
                       <span>
-                        {chosenPkg.emoji} {chosenPkg.name} — {child.full_name}
+                        {chosenPkg.emoji} {chosenPkg.name} —{" "}
+                        {who === "self" ? account.full_name : child.full_name}
                       </span>
                       <span className="font-display font-bold text-xl">
                         {formatZar(chosenPkg.price_cents / 100)}
                       </span>
                     </div>
-                    {slotAt && (
-                      <p className="mt-1 text-xs text-ink-soft">
-                        First lesson:{" "}
-                        {new Date(slotAt).toLocaleString("en-ZA", {
-                          weekday: "long",
-                          day: "numeric",
-                          month: "long",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}{" "}
-                        ({mode === "online" ? "online" : "in person"})
-                      </p>
-                    )}
+                    <ul className="mt-2 space-y-0.5 text-xs text-ink-soft">
+                      {picked
+                        .slice()
+                        .sort((a, b) => a.slot_at.localeCompare(b.slot_at))
+                        .map((p) => (
+                          <li key={p.slot_at}>
+                            💻{" "}
+                            {new Date(p.slot_at).toLocaleString("en-ZA", {
+                              weekday: "long",
+                              day: "numeric",
+                              month: "long",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </li>
+                        ))}
+                    </ul>
                   </div>
+
+                  {!existingUser && (
+                    <div className="space-y-3 rounded-2xl border-2 border-line bg-paper p-5">
+                      <p className="font-display font-bold text-sm">
+                        Create your login <span className="text-ink-soft font-sans">({account.email})</span>
+                      </p>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Input
+                          type="password"
+                          placeholder="Password (8+ characters)"
+                          value={account.password}
+                          onChange={(e) => setAccount({ ...account, password: e.target.value })}
+                          autoComplete="new-password"
+                        />
+                        <Input
+                          type="password"
+                          placeholder="Repeat password"
+                          value={account.password2}
+                          onChange={(e) => setAccount({ ...account, password2: e.target.value })}
+                          autoComplete="new-password"
+                        />
+                      </div>
+                      <p className="text-xs text-ink-soft">
+                        Your account is only created now, right before payment —{" "}
+                        <Sparkle size={12} className="inline" /> no half-finished sign-ups floating
+                        about.
+                      </p>
+                    </div>
+                  )}
+
                   <p className="text-sm text-ink-soft">
-                    You&apos;ll hop over to <strong className="text-navy">PayFast</strong> — South
-                    Africa&apos;s trusted payment gateway — to pay securely. An invoice appears in
-                    your parent portal automatically. <Sparkle size={14} className="inline" />
+                    You&apos;ll hop over to <strong className="text-navy">PayFast</strong> to pay
+                    securely. Your invoice appears in your portal automatically, and the Lewis
+                    team is notified to match you with the perfect tutor. 🌈
                   </p>
                 </div>
               )}
@@ -572,17 +712,24 @@ export function OnboardingWizard({
                 >
                   ← Back
                 </Button>
-                <Button onClick={next} disabled={busy} size="lg" variant={step === 5 ? "sunshine" : "primary"}>
+                <Button onClick={next} disabled={busy} size="lg" variant={step === 6 ? "sunshine" : "primary"}>
                   {busy
                     ? "One sec…"
-                    : step === 5
-                      ? `Pay ${chosenPkg ? formatZar(chosenPkg.price_cents / 100) : ""} securely 🔒`
+                    : step === 6
+                      ? `${existingUser ? "" : "Create account & "}pay ${chosenPkg ? formatZar(chosenPkg.price_cents / 100) : ""} 🔒`
                       : "Next →"}
                 </Button>
               </div>
             </Card>
           </motion.div>
         </AnimatePresence>
+        <p className="mt-4 text-center text-xs text-ink-soft">
+          Already have an account?{" "}
+          <Link href="/login" className="font-bold text-coral underline underline-offset-2">
+            Sign in
+          </Link>{" "}
+          and book from your portal instead.
+        </p>
       </div>
     </main>
   );

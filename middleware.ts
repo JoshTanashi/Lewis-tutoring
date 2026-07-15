@@ -2,7 +2,8 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabase/config";
 
-const PROTECTED = ["/parent", "/student", "/tutor", "/admin", "/onboarding"];
+// /onboarding is public by design — the account is created at the payment step
+const PROTECTED = ["/parent", "/student", "/tutor", "/admin"];
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });

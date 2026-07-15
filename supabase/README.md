@@ -58,3 +58,26 @@ evaluate; the last three are the public waitlist form and the parents' booking /
 checkout API, each validating its own inputs. Trigger functions have all
 EXECUTE grants revoked. Consider enabling "leaked password protection" in
 Auth → Settings (dashboard-only toggle).
+
+## v2 — the academy update
+
+Migrations `v2_*` turn the single-tutor site into a small academy:
+
+- **Pipeline**: students sign up → super admin intake queue → `assign_student`
+  (to any tutor, or yourself = instantly active) → tutor `tutor_decision`
+  approve/deny (deny returns them to the queue with an optional reason).
+  Hand-overs keep the full history — data lives with the student.
+- **Tutors**: `tutor_profiles` (+ per-tutor `availability_slots`,
+  `tutor_subjects` for smart matching) and `tutor_commissions`
+  (super-admin-only, default R100/lesson).
+- **Notifications**: table + triggers for sign-ups, assignments, denials,
+  payments, homework hand-ins, applications and messages → the portal bell.
+- **Applications**: `tutor_applications` via anon RPC `apply_to_tutor`;
+  approved emails become tutors automatically at signup.
+- **Scoping**: tutors now see ONLY their assigned students
+  (`can_see_student` / `can_manage_student`); money, settings, audit and
+  love notes are super-admin-only; permanent deletes are super-admin-only.
+- **Onboarding**: public wizard, account created at the payment step
+  (metadata `self_student` → student role for older self-sign-ups),
+  `create_invoice_for_package` reuses pending twins (no double payments),
+  `get_open_slots(days, tutor)` is per-tutor aware.

@@ -1,4 +1,5 @@
 import { PortalShell } from "@/components/portal/shell";
+import { getNotices } from "@/lib/notices";
 import { requireRole } from "@/lib/rbac";
 
 const NAV = [
@@ -11,8 +12,9 @@ const NAV = [
 
 export default async function ParentLayout({ children }: { children: React.ReactNode }) {
   const profile = await requireRole(["parent", "super_admin"]);
+  const notices = await getNotices();
   return (
-    <PortalShell role="parent" userName={profile.full_name || "Parent"} nav={NAV}>
+    <PortalShell role="parent" userName={profile.full_name || "Parent"} nav={NAV} notices={notices}>
       {children}
     </PortalShell>
   );

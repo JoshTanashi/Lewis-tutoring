@@ -1,6 +1,9 @@
-// Parent signup with auto-confirmed email (no SMTP dependency).
+// Account creation with auto-confirmed email (no SMTP dependency).
 // Public endpoint by design — equivalent to Supabase's own /signup, but it
-// creates the user pre-confirmed so families can sign in immediately.
+// creates the user pre-confirmed so families can pay & sign in immediately.
+// self_student=true lets older learners register for themselves (the DB
+// trigger maps it to the low-privilege 'student' role — staff roles can
+// never be chosen from the client).
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const cors = {
@@ -14,7 +17,7 @@ Deno.serve(async (req: Request) => {
     return new Response(JSON.stringify({ error: "method not allowed" }), { status: 405, headers: cors });
   }
   try {
-    const { email, password, full_name, phone } = await req.json();
+    const { email, password, full_name, phone, self_student } = await req.json();
     const cleanEmail = String(email ?? "").trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) throw new Error("Please enter a valid email address.");
     if (cleanEmail.endsWith("@kids.lewistutoring.co.za")) throw new Error("That email domain is reserved.");
@@ -31,7 +34,11 @@ Deno.serve(async (req: Request) => {
       email: cleanEmail,
       password,
       email_confirm: true,
-      user_metadata: { full_name: full_name.trim(), phone: phone ?? null },
+      user_metadata: {
+        full_name: full_name.trim(),
+        phone: phone ?? null,
+        self_student: self_student === true ? "true" : "false",
+      },
     });
     if (error) {
       const msg = /already/i.test(error.message)

@@ -41,6 +41,7 @@ npm run dev
 | --- | --- | --- |
 | Parent | `/login` | `demo.parent@lewistutoring.co.za` / `DemoParent2026!` |
 | Kid (Zoë) | `/kid-login` | secret name `super-zoe` / PIN `123456` |
+| Teen (self-signed-up) | `/login` | `test.teen@example.com` / `TestTeen2026!` |
 | Tutor | `/login` | `miss.lewis@lewistutoring.co.za` / `MissLewis2026!` |
 
 **Super admin:** sign up / sign in with `michaelajanepotgieter22@gmail.com`
@@ -54,7 +55,7 @@ the `super_admin` role and land in Mission Control at `/admin`.
 | Kids' space | `/student` | missions, badge shelf, streaks, confidence meter, homework hand-in |
 | Parent | `/parent` | per-child KPIs, marks chart, live booking, invoices (pay & print), kid-login creation, chat |
 | Tutor HQ | `/tutor` | today's schedule, wrap-up + attendance, record tests/badges/notes, homework review, finance, availability editor, private love notes 💛 |
-| Mission Control | `/admin` | business KPIs, revenue & subject charts, at-risk students, user roles, audit log, pricing editor, waitlist |
+| Mission Control | `/admin` | intake queue with smart tutor matching, per-tutor spaces (activity, commission, notes, availability), tutor applications & interviews, per-tutor calendar, notifications bell, roles in Settings, audit log |
 
 ## Payments (PayFast)
 

@@ -35,7 +35,7 @@ export default async function ParentDashboard() {
     await Promise.all([
       supabase
         .from("lessons")
-        .select("id, scheduled_at, mode, status, student_id, subjects(name, emoji)")
+        .select("id, scheduled_at, mode, status, meeting_url, student_id, subjects(name, emoji)")
         .in("student_id", kidIds)
         .eq("status", "scheduled")
         .gte("scheduled_at", new Date().toISOString())
@@ -133,9 +133,18 @@ export default async function ParentDashboard() {
                     </p>
                     <p className="text-xs text-ink-soft">{fmtDate(l.scheduled_at, true)}</p>
                   </div>
-                  <Chip tone={l.mode === "online" ? "sky" : "grass"}>
-                    {l.mode === "online" ? "💻" : "🏡"}
-                  </Chip>
+                  {l.meeting_url ? (
+                    <a
+                      href={l.meeting_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="squash rounded-full bg-grass px-3 py-1 font-display text-xs font-bold text-white"
+                    >
+                      💻 Join
+                    </a>
+                  ) : (
+                    <Chip tone="sky">💻</Chip>
+                  )}
                 </li>
               ))}
             </ul>

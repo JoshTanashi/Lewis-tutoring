@@ -129,7 +129,7 @@ export function Hero() {
           <Chip tone="sunshine">★ Confidence Building</Chip>
           <Chip tone="grass">📖 Homework Support</Chip>
           <Chip tone="sky">✏️ Exam Preparation</Chip>
-          <Chip tone="lilac">🌈 Online &amp; In-Person</Chip>
+          <Chip tone="lilac">💻 Live Online Lessons</Chip>
         </div>
       </motion.div>
 

@@ -14,7 +14,7 @@ export default async function SchedulePage() {
 
   const { data: lessons } = await supabase
     .from("lessons")
-    .select("id, scheduled_at, mode, status, student_id, students(full_name, grade), subjects(name, emoji)")
+    .select("id, scheduled_at, mode, status, meeting_url, student_id, students(full_name, grade), subjects(name, emoji)")
     .gte("scheduled_at", from.toISOString())
     .lt("scheduled_at", to.toISOString())
     .order("scheduled_at");
@@ -53,9 +53,16 @@ export default async function SchedulePage() {
                           {student?.grade} · {subject?.emoji} {subject?.name ?? "Lesson"}
                         </p>
                       </div>
-                      <Chip tone={l.mode === "online" ? "sky" : "grass"}>
-                        {l.mode === "online" ? "💻 online" : "🏡 in person"}
-                      </Chip>
+                      {l.meeting_url && (
+                        <a
+                          href={l.meeting_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="squash rounded-full bg-grass px-3.5 py-1.5 font-display text-xs font-bold text-white"
+                        >
+                          💻 Join
+                        </a>
+                      )}
                       <Chip
                         tone={
                           l.status === "completed"
@@ -68,7 +75,9 @@ export default async function SchedulePage() {
                         {l.status}
                       </Chip>
                     </div>
-                    {l.status === "scheduled" && <LessonActions lessonId={l.id} studentId={l.student_id} />}
+                    {l.status === "scheduled" && (
+                      <LessonActions lessonId={l.id} studentId={l.student_id} meetingUrl={l.meeting_url} />
+                    )}
                   </Card>
                 );
               })}

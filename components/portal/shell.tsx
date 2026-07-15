@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import { Logo } from "@/components/brand/logo";
 import { CrownPal, HeartPal, PencilPal, StarPal } from "@/components/brand/mascots";
+import { NotificationBell, type Notice } from "@/components/portal/bell";
 import { createBrowserSupabase } from "@/lib/supabase/client";
 import type { Role } from "@/lib/roles";
 
@@ -13,9 +14,9 @@ export type NavItem = { href: string; label: string; icon: string };
 
 const MASCOT: Record<Role, ReactNode> = {
   student: <StarPal size={38} mood="excited" />,
-  parent: <HeartPal size={38} />,
-  tutor: <PencilPal size={38} />,
-  super_admin: <CrownPal size={38} />,
+  parent: <HeartPal size={38} mood="excited" />,
+  tutor: <PencilPal size={38} mood="excited" />,
+  super_admin: <CrownPal size={38} mood="excited" />,
 };
 
 const PORTAL_NAME: Record<Role, string> = {
@@ -31,12 +32,14 @@ export function PortalShell({
   nav,
   children,
   kidMode = false,
+  notices = [],
 }: {
   role: Role;
   userName: string;
   nav: NavItem[];
   children: ReactNode;
   kidMode?: boolean;
+  notices?: Notice[];
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -87,6 +90,8 @@ export function PortalShell({
       {/* top bar (mobile) */}
       <header className="sticky top-0 z-40 flex items-center justify-between border-b border-line bg-paper/90 px-4 py-2.5 backdrop-blur md:hidden">
         <Logo size="sm" />
+        <div className="flex items-center gap-2">
+          <NotificationBell notices={notices} />
         <button
           onClick={() => setOpen((o) => !o)}
           className="rounded-full p-2 text-navy"
@@ -96,6 +101,7 @@ export function PortalShell({
             {open ? <><path d="M6 6 L18 18" /><path d="M18 6 L6 18" /></> : <><path d="M4 7 H20" /><path d="M4 12 H20" /><path d="M4 17 H20" /></>}
           </svg>
         </button>
+        </div>
       </header>
       {open && (
         <div className="border-b border-line bg-paper p-4 md:hidden">
@@ -114,7 +120,7 @@ export function PortalShell({
               <Logo size="sm" />
             </div>
             <div className={`mb-5 flex items-center gap-2.5 rounded-2xl p-3 ${kidMode ? "card-sticker bg-pastel-yellow" : "bg-pastel-blue rounded-2xl"}`}>
-              {MASCOT[role]}
+              <span className="animate-float">{MASCOT[role]}</span>
               <div className="min-w-0">
                 <p className="truncate font-display font-bold text-sm leading-tight">{userName}</p>
                 <p className="text-[10px] font-bold text-ink-soft">{PORTAL_NAME[role]}</p>
@@ -130,7 +136,12 @@ export function PortalShell({
           </button>
         </aside>
 
-        <main className="min-w-0 flex-1 px-4 py-6 sm:px-8">{children}</main>
+        <main className="min-w-0 flex-1 px-4 py-6 sm:px-8">
+          <div className="mb-2 hidden justify-end md:flex">
+            <NotificationBell notices={notices} />
+          </div>
+          {children}
+        </main>
       </div>
     </div>
   );

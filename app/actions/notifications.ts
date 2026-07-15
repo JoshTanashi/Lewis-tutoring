@@ -1,0 +1,16 @@
+"use server";
+
+import { createServerSupabase } from "@/lib/supabase/server";
+
+export async function markAllNotificationsRead() {
+  const supabase = await createServerSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return;
+  await supabase
+    .from("notifications")
+    .update({ read_at: new Date().toISOString() })
+    .eq("recipient_id", user.id)
+    .is("read_at", null);
+}

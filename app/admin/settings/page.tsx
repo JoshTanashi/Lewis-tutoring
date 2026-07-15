@@ -1,26 +1,40 @@
 import { PageTitle, fmtCents } from "@/components/portal/widgets";
 import { Card, Chip } from "@/components/ui";
+import { getProfile } from "@/lib/rbac";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { PricingEditor } from "./pricing-editor";
+import { UserTable } from "./user-table";
 
-export const metadata = { title: "Settings" };
+export const metadata = { title: "Settings & roles" };
 
 export default async function SettingsPage() {
   const supabase = await createServerSupabase();
-  const [{ data: settings }, { data: packages }, { data: waitlist }] = await Promise.all([
-    supabase.from("settings").select("key, value"),
-    supabase
-      .from("packages")
-      .select("slug, name, emoji, lessons_per_month, price_cents, active")
-      .order("price_cents"),
-    supabase.from("waitlist").select("email, created_at").order("created_at", { ascending: false }),
-  ]);
+  const me = (await getProfile())!;
+  const [{ data: settings }, { data: packages }, { data: waitlist }, { data: users }] =
+    await Promise.all([
+      supabase.from("settings").select("key, value"),
+      supabase
+        .from("packages")
+        .select("slug, name, emoji, lessons_per_month, price_cents, active")
+        .order("price_cents"),
+      supabase.from("waitlist").select("email, created_at").order("created_at", { ascending: false }),
+      supabase.from("profiles").select("id, full_name, role, phone, created_at").order("created_at", { ascending: false }),
+    ]);
 
   const setting = (k: string) => settings?.find((s) => s.key === k)?.value as string | number | undefined;
 
   return (
     <>
-      <PageTitle title="Settings ⚙️" sub="The knobs and dials of Lewis Tutoring." />
+      <PageTitle title="Settings & roles ⚙️" sub="The knobs and dials of Lewis Tutoring." />
+
+      <section className="mb-8">
+        <h2 className="mb-3 font-display font-bold text-lg">Who can do what 👥</h2>
+        <p className="mb-3 text-sm text-ink-soft">
+          Only super admins can change roles — the database itself enforces it. Promoting
+          someone to tutor also creates their tutor profile automatically.
+        </p>
+        <UserTable users={users ?? []} meId={me.id} />
+      </section>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="space-y-6">

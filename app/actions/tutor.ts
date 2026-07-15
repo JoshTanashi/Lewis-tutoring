@@ -133,16 +133,46 @@ export async function toggleSlot(slot_id: string, active: boolean) {
   const supabase = await createServerSupabase();
   const { error } = await supabase.from("availability_slots").update({ active }).eq("id", slot_id);
   revalidatePath("/tutor/availability");
+  revalidatePath("/admin/calendar");
   return error ? { ok: false as const, error: error.message } : { ok: true as const };
 }
 
-export async function addSlot(weekday: number, start_time: string, mode: string) {
+/** tutorId null = the general pool; admins may edit anyone, tutors only themselves (RLS). */
+export async function addSlot(weekday: number, start_time: string, tutorId: string | null) {
   const supabase = await createServerSupabase();
   const { error } = await supabase
     .from("availability_slots")
-    .insert({ weekday, start_time, mode });
+    .insert({ weekday, start_time, mode: "online", tutor_id: tutorId });
   revalidatePath("/tutor/availability");
+  revalidatePath("/admin/calendar");
   return error
-    ? { ok: false as const, error: /duplicate/i.test(error.message) ? "That slot already exists." : error.message }
+    ? { ok: false as const, error: /duplicate|unique/i.test(error.message) ? "That slot already exists." : error.message }
     : { ok: true as const };
+}
+
+/** Set the online classroom link for an upcoming lesson. */
+export async function setLessonMeetingUrl(lessonId: string, url: string) {
+  const supabase = await createServerSupabase();
+  const clean = url.trim();
+  if (clean && !/^https?:\/\//.test(clean)) {
+    return { ok: false as const, error: "The link should start with https://" };
+  }
+  const { error } = await supabase
+    .from("lessons")
+    .update({ meeting_url: clean || null })
+    .eq("id", lessonId);
+  revalidatePath("/tutor/schedule");
+  return error ? { ok: false as const, error: error.message } : { ok: true as const };
+}
+
+/** Tutor accepts or declines a student the admin assigned to them. */
+export async function decideOnStudent(studentId: string, approve: boolean, reason?: string) {
+  const supabase = await createServerSupabase();
+  const { error } = await supabase.rpc("tutor_decision", {
+    p_student: studentId,
+    p_approve: approve,
+    p_reason: reason ?? null,
+  });
+  revalidatePath("/tutor");
+  return error ? { ok: false as const, error: error.message } : { ok: true as const };
 }

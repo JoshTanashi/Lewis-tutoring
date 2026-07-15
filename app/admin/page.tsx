@@ -8,7 +8,7 @@ export const metadata = { title: "Mission Control" };
 
 export default async function AdminDashboard() {
   const supabase = await createServerSupabase();
-  const [{ data: kpis }, { data: monthly }, { data: subjectPerf }, { data: risk }] =
+  const [{ data: kpis }, { data: monthly }, { data: subjectPerf }, { data: risk }, { data: pipeline }] =
     await Promise.all([
       supabase.from("v_admin_kpis").select("*").single(),
       supabase.from("v_monthly_revenue").select("*").order("month").limit(12),
@@ -18,7 +18,11 @@ export default async function AdminDashboard() {
         .select("student_id, full_name, grade, attendance_pct, avg_mark_pct, homework_pct")
         .or("attendance_pct.lt.80,homework_pct.lt.60")
         .limit(5),
+      supabase.from("students").select("assignment_status"),
     ]);
+
+  const count = (s: string) => (pipeline ?? []).filter((p) => p.assignment_status === s).length;
+  const needsAction = count("unassigned") + count("denied");
 
   return (
     <>
@@ -26,6 +30,21 @@ export default async function AdminDashboard() {
         title="Mission Control 👑"
         sub="Everything important, visible in 30 seconds."
       />
+
+      {needsAction > 0 && (
+        <Card className="mb-6 flex flex-wrap items-center justify-between gap-3 border-2 border-sunshine bg-pastel-yellow p-4">
+          <p className="font-display font-bold">
+            🎒 {needsAction} student{needsAction > 1 ? "s" : ""} waiting for a tutor
+            {count("pending_tutor") > 0 && ` · ${count("pending_tutor")} awaiting tutor approval`}
+          </p>
+          <Link
+            href="/admin/people"
+            className="squash rounded-full bg-navy px-5 py-2 font-display text-sm font-bold text-white"
+          >
+            Open the queue →
+          </Link>
+        </Card>
+      )}
 
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
         <StatCard label="Students" value={kpis?.total_students ?? 0} emoji="⭐" tone="sky" hint={`${kpis?.active_students ?? 0} active · ${kpis?.new_students_30d ?? 0} new`} />

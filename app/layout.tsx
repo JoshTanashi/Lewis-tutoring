@@ -20,12 +20,12 @@ export const metadata: Metadata = {
     template: "%s · Lewis Tutoring",
   },
   description:
-    "Building confident learners, one lesson at a time. Personalised tutoring for kids of all ages — grade 1 prep, homework support, exam preparation, online & in-person.",
+    "Building confident learners, one lesson at a time. Personalised tutoring for kids of all ages — grade 1 prep, homework support, exam preparation — live online lessons.",
   icons: { icon: "/favicon.svg" },
   openGraph: {
     title: "Lewis Tutoring — Building confident learners",
     description:
-      "Personalised tutoring for kids of all ages — grade 1 prep, homework support, exam preparation. Online & in person.",
+      "Personalised tutoring for kids of all ages — grade 1 prep, homework support, exam preparation. Live online lessons.",
     images: ["/og.png"],
     type: "website",
   },

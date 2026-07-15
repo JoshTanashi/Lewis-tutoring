@@ -1,52 +1,79 @@
 import Link from "next/link";
 import { PencilPal, Sparkle } from "@/components/brand/mascots";
-import { EmptyState, PageTitle, StatCard, fmtCents } from "@/components/portal/widgets";
+import { EmptyState, PageTitle, StatCard, fmtDate } from "@/components/portal/widgets";
 import { Card, Chip } from "@/components/ui";
+import { getProfile } from "@/lib/rbac";
 import { createServerSupabase } from "@/lib/supabase/server";
+import { ApprovalQueue, type PendingStudent } from "./approval-queue";
 import { LessonActions } from "./schedule/lesson-actions";
 
 export const metadata = { title: "Tutor HQ" };
 
 export default async function TutorDashboard() {
   const supabase = await createServerSupabase();
+  const me = (await getProfile())!;
   const dayStart = new Date();
   dayStart.setHours(0, 0, 0, 0);
   const dayEnd = new Date(dayStart);
   dayEnd.setDate(dayEnd.getDate() + 1);
 
   const [
-    { data: kpis },
+    { data: pending },
+    { data: pendingSubjects },
+    { data: roster },
     { data: today },
     { count: reviewCount },
-    { data: attention },
     { data: motivation },
   ] = await Promise.all([
-    supabase.from("v_admin_kpis").select("*").single(),
+    supabase
+      .from("students")
+      .select("id, full_name, grade, goals, wants_assessment, other_subjects")
+      .eq("assigned_tutor_id", me.id)
+      .eq("assignment_status", "pending_tutor")
+      .order("created_at"),
+    supabase.from("enrollments").select("student_id, subjects(name, emoji)"),
+    supabase
+      .from("v_student_overview")
+      .select("*")
+      .order("full_name"),
     supabase
       .from("lessons")
-      .select("id, scheduled_at, mode, status, student_id, students(full_name), subjects(name, emoji)")
+      .select("id, scheduled_at, mode, status, meeting_url, student_id, students(full_name), subjects(name, emoji)")
+      .eq("tutor_id", me.id)
       .gte("scheduled_at", dayStart.toISOString())
       .lt("scheduled_at", dayEnd.toISOString())
       .order("scheduled_at"),
-    supabase
-      .from("homework")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "submitted"),
-    supabase
-      .from("v_student_overview")
-      .select("student_id, full_name, grade, attendance_pct, avg_mark_pct, homework_pct")
-      .order("avg_mark_pct", { ascending: true, nullsFirst: false })
-      .limit(3),
+    supabase.from("homework").select("id", { count: "exact", head: true }).eq("status", "submitted"),
     supabase.from("motivational_messages").select("body, author"),
   ]);
 
-  // a different love note each day, rotating through the collection
+  // v_student_overview is RLS-scoped; keep only the students actually in my class here
+  const { data: myStudents } = await supabase
+    .from("students")
+    .select("id, assigned_tutor_id, assignment_status, wants_assessment, mascot")
+    .eq("assigned_tutor_id", me.id)
+    .eq("assignment_status", "active");
+  const myIds = new Set((myStudents ?? []).map((s) => s.id));
+  const myRoster = (roster ?? []).filter((r) => myIds.has(r.student_id as string));
+
+  const pendingCards: PendingStudent[] = (pending ?? []).map((p) => ({
+    ...p,
+    subjects: (pendingSubjects ?? [])
+      .filter((e) => e.student_id === p.id)
+      .map((e) => e.subjects as unknown as { name: string; emoji: string })
+      .filter(Boolean),
+  }));
+
   const dayIndex = Math.floor(dayStart.getTime() / 86_400_000);
   const note = motivation?.length ? motivation[dayIndex % motivation.length] : null;
+  const firstName = (me.full_name || "there").split(" ")[0];
 
   return (
     <>
-      <PageTitle title="Good day, Miss Lewis! ✏️" sub="Here's your classroom at a glance." />
+      <PageTitle
+        title={`Good day, ${firstName}! ✏️`}
+        sub="Here's your classroom at a glance."
+      />
 
       {note && (
         <Card className="relative mb-6 overflow-hidden border-2 border-lilac bg-pastel-purple p-5">
@@ -63,21 +90,13 @@ export default async function TutorDashboard() {
         </Card>
       )}
 
+      <ApprovalQueue students={pendingCards} />
+
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="Lessons today" value={today?.length ?? 0} emoji="🎓" tone="sky" />
         <StatCard label="Homework to review" value={reviewCount ?? 0} emoji="📚" tone="sunshine" />
-        <StatCard
-          label="Revenue this month"
-          value={fmtCents(kpis?.revenue_this_month_cents ?? 0)}
-          emoji="💰"
-          tone="grass"
-        />
-        <StatCard
-          label="Active students"
-          value={`${kpis?.active_students ?? 0}/${kpis?.total_students ?? 0}`}
-          emoji="⭐"
-          tone="lilac"
-        />
+        <StatCard label="My students" value={myRoster.length} emoji="⭐" tone="grass" />
+        <StatCard label="Waiting to join" value={pendingCards.length} emoji="🤝" tone="lilac" />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
@@ -100,15 +119,21 @@ export default async function TutorDashboard() {
                         </span>
                       </p>
                     </div>
-                    <Chip tone={l.mode === "online" ? "sky" : "grass"}>
-                      {l.mode === "online" ? "💻 online" : "🏡 in person"}
-                    </Chip>
+                    {l.meeting_url ? (
+                      <a
+                        href={l.meeting_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="squash rounded-full bg-grass px-3.5 py-1.5 font-display text-xs font-bold text-white"
+                      >
+                        💻 Join lesson
+                      </a>
+                    ) : (
+                      <Chip tone="sunshine">no link yet</Chip>
+                    )}
                   </div>
                   {l.status === "scheduled" && (
-                    <LessonActions lessonId={l.id} studentId={l.student_id} />
-                  )}
-                  {l.status !== "scheduled" && (
-                    <p className="mt-1 text-xs font-bold text-ink-soft">status: {l.status}</p>
+                    <LessonActions lessonId={l.id} studentId={l.student_id} meetingUrl={l.meeting_url} />
                   )}
                 </li>
               ))}
@@ -119,28 +144,32 @@ export default async function TutorDashboard() {
         </Card>
 
         <Card className="p-5">
-          <h2 className="mb-3 font-display font-bold text-lg">Might need a boost 💪</h2>
-          {attention?.length ? (
-            <ul className="space-y-3">
-              {attention.map((s) => (
-                <li key={s.student_id}>
-                  <Link
-                    href={`/tutor/students/${s.student_id}`}
-                    className="squash flex items-center gap-3 rounded-2xl border-2 border-line bg-paper p-3"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="font-display font-bold text-sm">{s.full_name}</p>
-                      <p className="text-xs text-ink-soft">{s.grade}</p>
-                    </div>
-                    <Chip tone="sky">avg {s.avg_mark_pct ?? "—"}%</Chip>
+          <h2 className="mb-3 font-display font-bold text-lg">My class ⭐</h2>
+          {myRoster.length ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {myRoster.map((s) => (
+                <Link
+                  key={s.student_id}
+                  href={`/tutor/students/${s.student_id}`}
+                  className="squash block rounded-2xl border-2 border-line bg-paper p-3"
+                >
+                  <p className="font-display font-bold text-sm">{s.full_name}</p>
+                  <p className="text-xs text-ink-soft">{s.grade}</p>
+                  <div className="mt-2 flex flex-wrap gap-1">
                     <Chip tone="grass">att {s.attendance_pct}%</Chip>
-                    <Chip tone="sunshine">hw {s.homework_pct}%</Chip>
-                  </Link>
-                </li>
+                    <Chip tone="sky">avg {s.avg_mark_pct ?? "—"}%</Chip>
+                    {s.next_lesson_at && (
+                      <Chip tone="sunshine">⏰ {fmtDate(s.next_lesson_at)}</Chip>
+                    )}
+                  </div>
+                </Link>
               ))}
-            </ul>
+            </div>
           ) : (
-            <EmptyState title="No students yet" hint="They'll appear as families sign up." />
+            <EmptyState
+              title="No students in your class yet"
+              hint="When the Lewis team assigns you a student, they pop up above for your yes!"
+            />
           )}
         </Card>
       </div>

@@ -9,7 +9,7 @@ export const metadata = { title: "Terms of Service" };
 const SECTIONS: Array<[string, string]> = [
   [
     "1. Who we are",
-    "Lewis Tutoring provides one-on-one tutoring for school children — online and in person — plus this website, where families book lessons, follow progress and pay invoices.",
+    "Lewis Tutoring provides one-on-one tutoring for school children — live online lessons — plus this website, where families book lessons, follow progress and pay invoices.",
   ],
   [
     "2. Bookings & cancellations",

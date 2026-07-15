@@ -32,7 +32,13 @@ const STATUS_LABEL = {
   refunded: "↩ Refunded",
 } as const;
 
-export function InvoiceList({ invoices }: { invoices: Invoice[] }) {
+export function InvoiceList({
+  invoices,
+  basePath = "/parent/billing",
+}: {
+  invoices: Invoice[];
+  basePath?: string;
+}) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -82,7 +88,7 @@ export function InvoiceList({ invoices }: { invoices: Invoice[] }) {
             </Button>
           ) : (
             <Link
-              href={`/parent/billing/${inv.id}`}
+              href={`${basePath}/${inv.id}`}
               className="font-display text-sm font-bold text-sky-deep underline underline-offset-2"
             >
               View / print

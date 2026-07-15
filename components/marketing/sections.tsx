@@ -22,7 +22,7 @@ const MARQUEE_ITEMS = [
   "★ Confidence Building",
   "📖 Homework Support",
   "✏️ Exam Preparation",
-  "🌈 Online & In-Person",
+  "💻 Live online lessons",
   "🎓 Grade 1 Prep",
   "🧮 Maths made friendly",
   "📚 Reading adventures",
@@ -285,8 +285,8 @@ const FAQS = [
     a: "All ages of school kids — from grade 1 preparation for the littlest learners right through to older students needing homework support and exam preparation.",
   },
   {
-    q: "Are lessons online or in person?",
-    a: "Both! You can choose online lessons or in-person sessions, whatever works best for your child — it's one of our favourite things about Lewis Tutoring.",
+    q: "How do online lessons work?",
+    a: "All lessons are live one-on-one video lessons — your tutor sends the video link before each lesson, and older students can even sign themselves up and manage their own dashboard.",
   },
   {
     q: "How much does it cost?",
@@ -386,7 +386,8 @@ export function FooterCta() {
               {[
                 ["Sign in", "/login"],
                 ["Kids' login", "/kid-login"],
-                ["Book a lesson", "/signup"],
+                ["Book a lesson", "/onboarding"],
+                ["Become a tutor", "/become-a-tutor"],
               ].map(([l, h]) => (
                 <Link key={h} href={h} className="block text-white/70 hover:text-white">
                   {l}
